@@ -68,7 +68,7 @@ func (t *testItem) execute(s string) *testOutput {
 			// --flag
 			// somevalue
 			//pttn := `(` + t.Flag + `)(=)*([^\s,]*) *`
-			pttn := `(` + t.Flag + `)(=)*([^\s]*) *`
+			pttn := `(` + t.Flag + `)(=|: *)*([^\s]*) *`
 			flagRe := regexp.MustCompile(pttn)
 			vals := flagRe.FindStringSubmatch(s)
 
@@ -143,6 +143,12 @@ type tests struct {
 
 func (ts *tests) execute(s string) *testOutput {
 	finalOutput := &testOutput{}
+
+	// If no tests are defined return with empty finalOutput.
+	// This may be the case for checks of type: "skip".
+	if ts == nil {
+		return finalOutput
+	}
 
 	res := make([]testOutput, len(ts.TestItems))
 	if len(res) == 0 {

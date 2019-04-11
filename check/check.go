@@ -78,6 +78,7 @@ type Check struct {
 // the results.
 func (c *Check) Run() {
 
+	// If check type is skip, force result to INFO
 	if c.Type == "skip" {
 		c.State = INFO
 		return
@@ -164,6 +165,8 @@ func (c *Check) Run() {
 
 		i++
 	}
+
+	glog.V(3).Info(out.String())
 
 	finalOutput := c.Tests.execute(out.String())
 	if finalOutput != nil {

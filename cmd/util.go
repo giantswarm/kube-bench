@@ -33,20 +33,6 @@ func init() {
 	statFunc = os.Stat
 }
 
-func printlnWarn(msg string) {
-	fmt.Fprintf(os.Stderr, "[%s] %s\n",
-		colors[check.WARN].Sprintf("%s", check.WARN),
-		msg,
-	)
-}
-
-func sprintlnWarn(msg string) string {
-	return fmt.Sprintf("[%s] %s",
-		colors[check.WARN].Sprintf("%s", check.WARN),
-		msg,
-	)
-}
-
 func exitWithError(err error) {
 	fmt.Fprintf(os.Stderr, "\n%v\n", err)
 	os.Exit(1)
@@ -86,8 +72,9 @@ func ps(proc string) string {
 	return string(out)
 }
 
-// getBinaries finds which of the set of candidate executables are running
-func getBinaries(v *viper.Viper) map[string]string {
+// getBinaries finds which of the set of candidate executables are running.
+// It returns an error if one mandatory executable is not running.
+func getBinaries(v *viper.Viper) (map[string]string, error) {
 	binmap := make(map[string]string)
 
 	for _, component := range v.GetStringSlice("components") {
@@ -101,7 +88,7 @@ func getBinaries(v *viper.Viper) map[string]string {
 		if len(bins) > 0 {
 			bin, err := findExecutable(bins)
 			if err != nil && !optional {
-				exitWithError(fmt.Errorf("need %s executable but none of the candidates are running", component))
+				return nil, fmt.Errorf("need %s executable but none of the candidates are running", component)
 			}
 
 			// Default the executable name that we'll substitute to the name of the component
@@ -115,7 +102,7 @@ func getBinaries(v *viper.Viper) map[string]string {
 		}
 	}
 
-	return binmap
+	return binmap, nil
 }
 
 // getConfigFilePath locates the config files we should be using based on either the specified
@@ -233,6 +220,37 @@ func getServiceFiles(v *viper.Viper) map[string]string {
 	return svcmap
 }
 
+// getKubeConfigFiles finds which of the set of candidate kubeconfig files exist
+func getKubeConfigFiles(v *viper.Viper) map[string]string {
+	kubeconfigmap := make(map[string]string)
+
+	for _, component := range v.GetStringSlice("components") {
+		s := v.Sub(component)
+		if s == nil {
+			continue
+		}
+
+		// See if any of the candidate config files exist
+		kubeconfig := findConfigFile(s.GetStringSlice("kubeconfig"))
+		if kubeconfig == "" {
+			if s.IsSet("defaultkubeconfig") {
+				kubeconfig = s.GetString("defaultkubeconfig")
+				glog.V(2).Info(fmt.Sprintf("Using default kubeconfig file name '%s' for component %s", kubeconfig, component))
+			} else {
+				// Default the service file name that we'll substitute to the name of the component
+				glog.V(2).Info(fmt.Sprintf("Missing service file for %s", component))
+				kubeconfig = component
+			}
+		} else {
+			glog.V(2).Info(fmt.Sprintf("Component %s uses service file '%s'", component, kubeconfig))
+		}
+
+		kubeconfigmap[component] = kubeconfig
+	}
+
+	return kubeconfigmap
+}
+
 // verifyBin checks that the binary specified is running
 func verifyBin(bin string) bool {
 
@@ -303,6 +321,12 @@ func getKubeVersion() (string, error) {
 	if err != nil {
 		_, err = exec.LookPath("kubelet")
 		if err != nil {
+			// Search for the kubelet binary all over the filesystem and run the first match to get the kubernetes version
+			cmd := exec.Command("/bin/sh", "-c", "`find / -type f -executable -name kubelet 2>/dev/null | grep -m1 .` --version")
+			out, err := cmd.CombinedOutput()
+			if err == nil {
+				return getVersionFromKubeletOutput(string(out)), nil
+			}
 			return "", fmt.Errorf("need kubectl or kubelet binaries to get kubernetes version")
 		}
 		return getKubeVersionFromKubelet(), nil
@@ -336,7 +360,7 @@ func getVersionFromKubectlOutput(s string) string {
 	serverVersionRe := regexp.MustCompile(`Server Version: v(\d+.\d+)`)
 	subs := serverVersionRe.FindStringSubmatch(s)
 	if len(subs) < 2 {
-		printlnWarn(fmt.Sprintf("Unable to get kubectl version, using default version: %s", defaultKubeVersion))
+		glog.V(1).Info(fmt.Sprintf("Unable to get Kubernetes version from kubectl, using default version: %s", defaultKubeVersion))
 		return defaultKubeVersion
 	}
 	return subs[1]
@@ -346,7 +370,7 @@ func getVersionFromKubeletOutput(s string) string {
 	serverVersionRe := regexp.MustCompile(`Kubernetes v(\d+.\d+)`)
 	subs := serverVersionRe.FindStringSubmatch(s)
 	if len(subs) < 2 {
-		printlnWarn(fmt.Sprintf("Unable to get kubelet version, using default version: %s", defaultKubeVersion))
+		glog.V(1).Info(fmt.Sprintf("Unable to get Kubernetes version from kubelet, using default version: %s", defaultKubeVersion))
 		return defaultKubeVersion
 	}
 	return subs[1]
