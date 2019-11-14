@@ -25,22 +25,32 @@ import (
 	"github.com/spf13/viper"
 )
 
+type FilterOpts struct {
+	CheckList string
+	GroupList string
+	Scored    bool
+	Unscored  bool
+}
+
 var (
 	envVarsPrefix      = "KUBE_BENCH"
-	defaultKubeVersion = "1.6"
+	defaultKubeVersion = "1.11"
 	kubeVersion        string
+	benchmarkVersion   string
 	cfgFile            string
 	cfgDir             string
 	jsonFmt            bool
+	junitFmt           bool
 	pgSQL              bool
-	checkList          string
-	groupList          string
 	masterFile         = "master.yaml"
 	nodeFile           = "node.yaml"
-	federatedFile      string
 	noResults          bool
 	noSummary          bool
 	noRemediations     bool
+	filterOpts         FilterOpts
+	includeTestOutput  bool
+	outputFile         string
+	configFileError    error
 )
 
 // RootCmd represents the base command when called without any subcommands
@@ -66,8 +76,12 @@ func Execute() {
 
 	if err := RootCmd.Execute(); err != nil {
 		fmt.Println(err)
+		// flush before exit non-zero
+		glog.Flush()
 		os.Exit(-1)
 	}
+	// flush before exit
+	glog.Flush()
 }
 
 func init() {
@@ -78,17 +92,22 @@ func init() {
 	RootCmd.PersistentFlags().BoolVar(&noSummary, "nosummary", false, "Disable printing of summary section")
 	RootCmd.PersistentFlags().BoolVar(&noRemediations, "noremediations", false, "Disable printing of remediations section")
 	RootCmd.PersistentFlags().BoolVar(&jsonFmt, "json", false, "Prints the results as JSON")
+	RootCmd.PersistentFlags().BoolVar(&junitFmt, "junit", false, "Prints the results as JUnit")
 	RootCmd.PersistentFlags().BoolVar(&pgSQL, "pgsql", false, "Save the results to PostgreSQL")
+	RootCmd.PersistentFlags().BoolVar(&filterOpts.Scored, "scored", true, "Run the scored CIS checks")
+	RootCmd.PersistentFlags().BoolVar(&filterOpts.Unscored, "unscored", true, "Run the unscored CIS checks")
+	RootCmd.PersistentFlags().BoolVar(&includeTestOutput, "include-test-output", false, "Prints the actual result when test fails")
+	RootCmd.PersistentFlags().StringVar(&outputFile, "outputfile", "", "Writes the JSON results to output file")
 
 	RootCmd.PersistentFlags().StringVarP(
-		&checkList,
+		&filterOpts.CheckList,
 		"check",
 		"c",
 		"",
 		`A comma-delimited list of checks to run as specified in CIS document. Example --check="1.1.1,1.1.2"`,
 	)
 	RootCmd.PersistentFlags().StringVarP(
-		&groupList,
+		&filterOpts.GroupList,
 		"group",
 		"g",
 		"",
@@ -97,6 +116,7 @@ func init() {
 	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./cfg/config.yaml)")
 	RootCmd.PersistentFlags().StringVarP(&cfgDir, "config-dir", "D", "./cfg/", "config directory")
 	RootCmd.PersistentFlags().StringVar(&kubeVersion, "version", "", "Manually specify Kubernetes version, automatically detected if unset")
+	RootCmd.PersistentFlags().StringVar(&benchmarkVersion, "benchmark", "", "Manually specify CIS benchmark version. It would be an error to specify both --version and --benchmark flags")
 
 	goflag.CommandLine.VisitAll(func(goflag *goflag.Flag) {
 		RootCmd.PersistentFlags().AddGoFlag(goflag)
@@ -113,12 +133,27 @@ func initConfig() {
 		viper.AddConfigPath(cfgDir)   // adding ./cfg as first search path
 	}
 
+	// Read flag values from environment variables.
+	// Precedence: Command line flags take precedence over environment variables.
 	viper.SetEnvPrefix(envVarsPrefix)
-	viper.AutomaticEnv() // read in environment variables that match
+	viper.AutomaticEnv()
+
+	if kubeVersion == "" {
+		if env := viper.Get("version"); env != nil {
+			kubeVersion = env.(string)
+		}
+	}
 
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err != nil {
-		colorPrint(check.FAIL, fmt.Sprintf("Failed to read config file: %v\n", err))
-		os.Exit(1)
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			// Config file not found; ignore error for now to prevent commands
+			// which don't need the config file exiting.
+			configFileError = err
+		} else {
+			// Config file was found but another error was produced
+			colorPrint(check.FAIL, fmt.Sprintf("Failed to read config file: %v\n", err))
+			os.Exit(1)
+		}
 	}
 }
