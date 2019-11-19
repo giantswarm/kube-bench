@@ -1,2 +1,35 @@
 ---
-## Version-specific settings that override the values in cfg/config.yaml
+## Controls Files.
+# These are YAML files that hold all the details for running checks.
+#
+## Uncomment to use different control file paths.
+# masterControls: ./cfg/master.yaml
+# nodeControls: ./cfg/node.yaml
+# federatedControls: ./cfg/federated.yaml
+
+master:
+  apiserver:
+    defaultconf: /etc/kubernetes/manifests/kube-apiserver.yaml
+
+  scheduler:
+    defaultconf: /etc/kubernetes/manifests/kube-scheduler.yaml
+
+  controllermanager:
+    defaultconf: /etc/kubernetes/manifests/kube-controller-manager.yaml
+
+  etcd:
+    defaultconf: /etc/kubernetes/manifests/etcd.yaml
+
+node:
+  kubelet:
+    bins:
+      - "hyperkube kubelet"
+    defaultsvc: /etc/systemd/system/k8s-kubelet.service
+    defaultconf: /etc/kubernetes/config/kubelet.yaml
+
+  proxy:
+    bins:
+      - "hyperkube proxy"
+    confs:
+      - /etc/kubernetes/config/proxy-config.yml
+      - /srv/kube-proxy-ds.yaml
