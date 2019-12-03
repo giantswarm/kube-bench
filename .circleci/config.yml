@@ -72,10 +72,10 @@ jobs:
             - ./architect
 
       - deploy:
-        command: |
-          if [ "${CIRCLE_BRANCH}" == "master" ]; then
-            ./architect deploy
-          fi        
+          command: |
+            if [ "${CIRCLE_BRANCH}" == "master" ]; then
+              ./architect deploy
+            fi        
 
   e2eTestBasic:
     environment:
