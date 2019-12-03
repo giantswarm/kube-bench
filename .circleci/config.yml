@@ -40,8 +40,7 @@ e2eTest: &e2eTest
     #         golang:1 go test -v -tags k8srequired ./${E2E_TEST_DIR}/
     - run:
       name: Run test
-      command: |
-        echo This is a very important test
+      command: echo This is a very important test
     - run:
         name: Export logs
         command: |
