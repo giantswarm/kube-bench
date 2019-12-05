@@ -13,5 +13,5 @@ jobs:
     - deploy:
         command: |
           if [ "${CIRCLE_BRANCH}" == "master" ]; then
-            ./architect deploy --working-directory /opt/kube-bench
+            ./architect deploy
           fi
