@@ -15,7 +15,7 @@ RUN apk --no-cache add procps
 COPY --from=build /go/bin/kube-bench /usr/local/bin/kube-bench
 COPY entrypoint.sh .
 COPY cfg/ cfg/
-ENTRYPOINT ["./entrypoint.sh"]
+ENTRYPOINT ["/opt/kube-bench/entrypoint.sh"]
 CMD ["install"]
 
 # Build-time metadata as defined at http://label-schema.org
